@@ -445,266 +445,340 @@ def mmm_app():
                 with col3:
                     st.metric("📅 Período", f"{df.shape[0]} semanas")
                 
-                # Configuración de variables
-                st.subheader("⚙️ Configuración de Variables")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Selección de variable objetivo (solo columnas numéricas)
-                    numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
-                    
-                    if not numeric_columns:
-                        st.error("❌ No se encontraron columnas numéricas en el archivo.")
-                        st.stop()
-                    
-                    target_col = st.selectbox(
-                        "🎯 Variable Objetivo (Target)",
-                        numeric_columns,
-                        help="Selecciona la variable de ventas que quieres modelar (solo variables numéricas)"
-                    )
-                    
-                    # Frecuencia del modelo
-                    frequency = st.selectbox(
-                        "📅 Frecuencia del Modelo",
-                        ["weekly", "monthly"],
-                        help="Frecuencia de agregación de los datos"
-                    )
-                
-                with col2:
-                    # Selección de medios (excluir fechas y target, solo numéricas)
-                    all_numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-                    
-                    # Excluir el target y columnas que parecen fechas
-                    available_cols = [col for col in all_numeric_cols 
-                                    if col != target_col 
-                                    and not any(word in col.lower() for word in ['fecha', 'date', 'time', 'id'])]
-                    
-                    if not available_cols:
-                        st.warning("⚠️ No hay variables de medios disponibles después de excluir el target.")
-                        media_cols = []
-                    else:
-                        media_cols = st.multiselect(
-                            "📺 Variables de Medios",
-                            available_cols,
-                            default=available_cols[:4] if len(available_cols) >= 4 else available_cols,
-                            help="Selecciona las variables de medios a incluir en el modelo"
-                        )
-                
-                # Configuración de Adstock
-                if media_cols:
-                    st.subheader("🔄 Parámetros de Adstock")
-                    adstock_params = {}
-                    
-                    # Validar que las columnas de medios son numéricas
-                    valid_media_cols = [col for col in media_cols if col in df.columns and df[col].dtype in ['int64', 'float64']]
-                    
-                    if valid_media_cols:
-                        cols = st.columns(min(len(valid_media_cols), 3))
-                        for i, media in enumerate(valid_media_cols):
-                            with cols[i % 3]:
-                                adstock_params[media] = st.slider(
-                                    f"Adstock {media}",
-                                    min_value=0.0,
-                                    max_value=1.0,
-                                    value=0.5,
-                                    step=0.1,
-                                    help=f"Parámetro de adstock para {media}"
-                                )
-                        
-                        # Guardar configuración en session state
-                        st.session_state['mmm_config'] = {
-                            'target_col': target_col,
-                            'media_cols': valid_media_cols,  # Usar solo las válidas
-                            'frequency': frequency,
-                            'adstock_params': adstock_params
-                        }
-                        st.session_state['mmm_data'] = df
-                    else:
-                        st.warning("⚠️ No hay variables de medios numéricas válidas seleccionadas.")
-                elif len(df.select_dtypes(include=[np.number]).columns) > 1:
-                    st.info("💡 Selecciona variables de medios para configurar los parámetros de adstock.")
-                
-                # Visualizaciones
+                # Análisis Exploratorio Básico
                 st.subheader("📊 Análisis Exploratorio")
+                st.info("💡 Explora tus datos aquí. La configuración de variables y modelado se hace en la siguiente pestaña.")
+                
+                # Guardar datos en session state para la siguiente pestaña
+                st.session_state['mmm_data'] = df
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    # Series temporales
+                    # Series temporales (todas las columnas numéricas)
                     st.subheader("📈 Series Temporales")
                     
-                    # Buscar columna de fecha de manera más robusta
+                    # Buscar columna de fecha
                     date_col = None
                     for col in df.columns:
-                        if any(word in col.lower() for word in ['fecha', 'date', 'time']) and col != target_col:
+                        if any(word in col.lower() for word in ['fecha', 'date', 'time']):
                             date_col = col
                             break
                     
-                    # Usar media_cols de la configuración guardada si existe
-                    display_media_cols = media_cols
-                    if 'mmm_config' in st.session_state:
-                        display_media_cols = st.session_state['mmm_config'].get('media_cols', media_cols)
+                    # Obtener columnas numéricas
+                    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
                     
-                    if display_media_cols:
-                        # Filtrar solo columnas numéricas para el gráfico
-                        numeric_media_cols = [col for col in display_media_cols 
-                                            if col in df.columns and df[col].dtype in ['int64', 'float64']]
-                        
-                        if numeric_media_cols:
-                            try:
-                                fig_ts = create_time_series_plot(df, date_col, numeric_media_cols)
-                                if fig_ts.data:  # Solo mostrar si hay datos
-                                    st.plotly_chart(fig_ts, use_container_width=True)
-                                else:
-                                    st.info("📊 Selecciona variables de medios para visualizar las series temporales.")
-                            except Exception as e:
-                                st.error(f"❌ Error al crear gráfico de series temporales: {str(e)}")
-                        else:
-                            st.warning("⚠️ No hay variables de medios numéricas para mostrar.")
+                    if numeric_cols:
+                        try:
+                            fig_ts = create_time_series_plot(df, date_col, numeric_cols[:5])
+                            if fig_ts.data:
+                                st.plotly_chart(fig_ts, use_container_width=True)
+                            else:
+                                st.info("📊 No hay columnas numéricas para mostrar series temporales.")
+                        except Exception as e:
+                            st.error(f"❌ Error al crear gráfico: {str(e)}")
                     else:
-                        st.info("📊 Selecciona variables de medios para visualizar las series temporales.")
+                        st.warning("⚠️ No se encontraron columnas numéricas para visualizar.")
                 
                 with col2:
-                    # Matriz de correlaciones
-                    st.subheader("🔗 Correlaciones con Target")
-                    if media_cols and target_col:
-                        corr_cols = media_cols + [target_col]
-                        numeric_cols = df[corr_cols].select_dtypes(include=[np.number]).columns.tolist()
-                        
-                        if len(numeric_cols) > 1:
+                    # Información general de correlaciones
+                    st.subheader("🔗 Vista General de Correlaciones")
+                    
+                    if len(numeric_cols) > 1:
+                        try:
                             corr_matrix = calculate_correlation_matrix(df, numeric_cols)
-                            target_corr = corr_matrix[target_col].drop(target_col)
-                            
-                            # Mostrar correlaciones como tabla
-                            corr_df = pd.DataFrame({
-                                'Variable': target_corr.index,
-                                'Correlación': target_corr.values.round(3)
-                            }).sort_values('Correlación', key=abs, ascending=False)
-                            
-                            st.dataframe(corr_df, use_container_width=True)
+                            if not corr_matrix.empty:
+                                # Mostrar solo estadísticas generales
+                                correlations_flat = corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)]
+                                
+                                st.metric("📊 Variables Numéricas", len(numeric_cols))
+                                st.metric("🔗 Correlación Promedio", f"{np.mean(np.abs(correlations_flat)):.3f}")
+                                st.metric("📈 Correlación Máxima", f"{np.max(np.abs(correlations_flat)):.3f}")
+                                
+                                st.info("🎯 Configura variables específicas en la siguiente pestaña para análisis detallado.")
+                            else:
+                                st.warning("⚠️ No se pudo calcular matriz de correlación.")
+                        except Exception as e:
+                            st.error(f"❌ Error en análisis de correlaciones: {str(e)}")
+                    else:
+                        st.warning("⚠️ Se necesitan al menos 2 variables numéricas para calcular correlaciones.")
+                
+                # Mensaje de siguiente paso
+                st.success("✅ Datos cargados correctamente. Ve a la pestaña '🔧 Modelado y Resultados' para configurar variables y ejecutar el modelo.")
     
     with tab2:
-        st.subheader("🔧 Configuración del Modelo DLM")
+        st.subheader("🔧 Configuración del Modelo y Modelado")
         
-        if 'mmm_config' in st.session_state and 'mmm_data' in st.session_state:
-            config = st.session_state['mmm_config']
+        if 'mmm_data' in st.session_state:
             df = st.session_state['mmm_data']
             
-            col1, col2, col3 = st.columns(3)
+            # Configuración de Variables (movido desde primera pestaña)
+            st.subheader("⚙️ Configuración de Variables")
+            
+            col1, col2 = st.columns(2)
             
             with col1:
-                discount_factor_base = st.number_input(
-                    "🎯 Discount Factor Base",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=0.9,
-                    step=0.1,
-                    help="Factor de descuento para la base orgánica"
+                # Selección de variable objetivo (solo columnas numéricas)
+                numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+                
+                if not numeric_columns:
+                    st.error("❌ No se encontraron columnas numéricas en el archivo.")
+                    st.stop()
+                
+                # Obtener valor previo si existe
+                current_target = st.session_state.get('mmm_config', {}).get('target_col', numeric_columns[0])
+                if current_target not in numeric_columns:
+                    current_target = numeric_columns[0]
+                
+                target_col = st.selectbox(
+                    "🎯 Variable Objetivo (Target)",
+                    numeric_columns,
+                    index=numeric_columns.index(current_target) if current_target in numeric_columns else 0,
+                    help="Selecciona la variable de ventas que quieres modelar (solo variables numéricas)"
+                )
+                
+                # Frecuencia del modelo
+                current_frequency = st.session_state.get('mmm_config', {}).get('frequency', 'weekly')
+                frequency = st.selectbox(
+                    "📅 Frecuencia del Modelo",
+                    ["weekly", "monthly"],
+                    index=0 if current_frequency == 'weekly' else 1,
+                    help="Frecuencia de agregación de los datos"
                 )
             
             with col2:
-                initial_point_base = st.number_input(
-                    "📍 Punto Inicial Base",
-                    min_value=0,
-                    value=100,
-                    help="Punto inicial para la base orgánica"
-                )
+                # Selección de medios (excluir fechas y target, solo numéricas)
+                all_numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                
+                # Excluir el target y columnas que parecen fechas
+                available_cols = [col for col in all_numeric_cols 
+                                if col != target_col 
+                                and not any(word in col.lower() for word in ['fecha', 'date', 'time', 'id'])]
+                
+                if not available_cols:
+                    st.warning("⚠️ No hay variables de medios disponibles después de excluir el target.")
+                    media_cols = []
+                else:
+                    # Obtener selección previa si existe
+                    current_media = st.session_state.get('mmm_config', {}).get('media_cols', [])
+                    # Filtrar solo las que siguen siendo válidas
+                    valid_current_media = [col for col in current_media if col in available_cols]
+                    # Si no hay selección previa válida, usar default
+                    if not valid_current_media:
+                        valid_current_media = available_cols[:4] if len(available_cols) >= 4 else available_cols
+                    
+                    media_cols = st.multiselect(
+                        "📺 Variables de Medios",
+                        available_cols,
+                        default=valid_current_media,
+                        help="Selecciona las variables de medios a incluir en el modelo"
+                    )
             
-            with col3:
-                seasonality = st.checkbox(
-                    "🌊 Estacionalidad Fourier",
-                    value=True,
-                    help="Incluir componente de estacionalidad"
-                )
-            
-            # Botón para ejecutar modelo
-            if st.button("🚀 Ejecutar Modelo MMM", type="primary"):
-                with st.spinner("🔄 Ejecutando modelo..."):
-                    # Simular el modelado
-                    model_config = {
-                        'adstock_params': config['adstock_params'],
-                        'discount_factor_base': discount_factor_base,
-                        'initial_point_base': initial_point_base,
-                        'seasonality': seasonality
+            # Validar y guardar configuración
+            if media_cols:
+                # Validar que las columnas de medios son numéricas
+                valid_media_cols = [col for col in media_cols if col in df.columns and df[col].dtype in ['int64', 'float64']]
+                
+                if valid_media_cols:
+                    # Actualizar configuración
+                    st.session_state['mmm_config'] = {
+                        'target_col': target_col,
+                        'media_cols': valid_media_cols,
+                        'frequency': frequency,
+                        'adstock_params': st.session_state.get('mmm_config', {}).get('adstock_params', {})
                     }
                     
-                    results = simulate_mmm_model(
-                        df, 
-                        config['target_col'], 
-                        config['media_cols'], 
-                        model_config
-                    )
+                    # Mostrar correlaciones específicas con target
+                    st.subheader("🔗 Correlaciones con Target Seleccionado")
+                    corr_cols = valid_media_cols + [target_col]
                     
-                    if results is not None:
-                        st.session_state['mmm_results'] = results
-                        st.success("✅ Modelo ejecutado exitosamente!")
-                    else:
-                        st.error("❌ Error al ejecutar el modelo. Verifica los datos y configuración.")
+                    try:
+                        corr_matrix = calculate_correlation_matrix(df, corr_cols)
+                        if not corr_matrix.empty and target_col in corr_matrix.columns:
+                            target_corr = corr_matrix[target_col].drop(target_col, errors='ignore')
+                            
+                            if not target_corr.empty:
+                                # Mostrar correlaciones como tabla
+                                corr_df = pd.DataFrame({
+                                    'Variable': target_corr.index,
+                                    'Correlación': target_corr.values.round(3)
+                                }).sort_values('Correlación', key=abs, ascending=False)
+                                
+                                # Mostrar en columnas para mejor presentación
+                                col1, col2 = st.columns([2, 1])
+                                with col1:
+                                    st.dataframe(corr_df, use_container_width=True)
+                                with col2:
+                                    # Interpretación rápida
+                                    strong_corr = corr_df[abs(corr_df['Correlación']) > 0.5]
+                                    st.metric("💪 Correlaciones Fuertes (>0.5)", len(strong_corr))
+                                    avg_corr = corr_df['Correlación'].abs().mean()
+                                    st.metric("📊 Correlación Promedio", f"{avg_corr:.3f}")
+                    except Exception as e:
+                        st.warning(f"⚠️ No se pudieron calcular correlaciones: {str(e)}")
+                    
+                else:
+                    st.warning("⚠️ No hay variables de medios numéricas válidas seleccionadas.")
+                    media_cols = []
+            else:
+                st.info("💡 Selecciona variables de medios para continuar con la configuración.")
             
-            # Mostrar resultados si existen
-            if 'mmm_results' in st.session_state:
-                results = st.session_state['mmm_results']
+            # Solo continuar si hay configuración válida
+            if 'mmm_config' in st.session_state and st.session_state['mmm_config'].get('media_cols'):
+                config = st.session_state['mmm_config']
+            
+                # Configuración de parámetros del modelo DLM
+                st.subheader("⚙️ Parámetros del Modelo DLM")
+                col1, col2, col3 = st.columns(3)
                 
-                st.subheader("📊 Resultados del Modelo")
+                with col1:
+                    discount_factor_base = st.number_input(
+                        "🎯 Discount Factor Base",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=0.9,
+                        step=0.1,
+                        help="Factor de descuento para la base orgánica"
+                    )
                 
-                # Verificar que hay resultados válidos
-                if results and 'contributions' in results and 'roi' in results:
-                    # Gráfico de contribuciones apiladas
-                    st.subheader("📈 Contribuciones por Medio")
-                    fig_contrib = create_contribution_chart(results['contributions'], config['media_cols'])
-                    if fig_contrib.data:  # Solo mostrar si hay datos
-                        st.plotly_chart(fig_contrib, use_container_width=True)
-                    else:
-                        st.warning("⚠️ No se pudieron generar las contribuciones.")
+                with col2:
+                    initial_point_base = st.number_input(
+                        "📍 Punto Inicial Base",
+                        min_value=0,
+                        value=100,
+                        help="Punto inicial para la base orgánica"
+                    )
+                
+                with col3:
+                    seasonality = st.checkbox(
+                        "🌊 Estacionalidad Fourier",
+                        value=True,
+                        help="Incluir componente de estacionalidad"
+                    )
+                
+                # Configuración de Adstock (movido desde primera pestaña)
+                st.subheader("🔄 Parámetros de Adstock por Medio")
+                st.info("💡 Los parámetros de adstock controlan cuánto 'carry-over' tiene cada medio publicitario.")
+                
+                adstock_params = {}
+                if config['media_cols']:
+                    cols = st.columns(min(len(config['media_cols']), 3))
+                    for i, media in enumerate(config['media_cols']):
+                        with cols[i % 3]:
+                            # Mantener valor previo si existe
+                            current_value = config.get('adstock_params', {}).get(media, 0.5)
+                            adstock_params[media] = st.slider(
+                                f"📺 {media}",
+                                min_value=0.0,
+                                max_value=1.0,
+                                value=current_value,
+                                step=0.1,
+                                help=f"Adstock para {media}: 0=sin carry-over, 1=máximo carry-over"
+                            )
                     
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        # Gráfico de pastel de ROI
-                        st.subheader("🥧 ROI por Medio")
-                        if results['roi']:
-                            fig_pie = create_roi_pie_chart(results['roi'])
-                            st.plotly_chart(fig_pie, use_container_width=True)
-                        else:
-                            st.warning("⚠️ No hay datos de ROI disponibles.")
-                    
-                    with col2:
-                        # Tabla de ROI
-                        st.subheader("💰 ROI Detallado")
-                        if results['roi']:
-                            roi_df = pd.DataFrame(list(results['roi'].items()), 
-                                                columns=['Medio', 'ROI'])
-                            roi_df['ROI'] = roi_df['ROI'].round(2)
-                            st.dataframe(roi_df, use_container_width=True)
-                        else:
-                            st.warning("⚠️ No hay datos de ROI disponibles.")
-                    
-                    # Opciones de descarga
-                    st.subheader("💾 Descargar Resultados")
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if results['contributions'] is not None and results['roi']:
-                            # Preparar datos para Excel
-                            excel_data = {
-                                'Contribuciones': results['contributions'],
-                                'ROI': pd.DataFrame(list(results['roi'].items()), 
-                                                  columns=['Medio', 'ROI'])
+                    # Actualizar configuración con nuevos parámetros de adstock
+                    st.session_state['mmm_config']['adstock_params'] = adstock_params
+                
+                else:
+                    st.warning("⚠️ No hay variables de medios configuradas.")
+                
+                # Botón para ejecutar modelo
+                st.subheader("🚀 Ejecutar Modelo")
+                
+                # Verificar que todo esté configurado
+                if config['media_cols'] and config.get('adstock_params'):
+                    if st.button("🚀 Ejecutar Modelo MMM", type="primary", use_container_width=True):
+                        with st.spinner("🔄 Ejecutando modelo..."):
+                            # Usar configuración actualizada
+                            model_config = {
+                                'adstock_params': st.session_state['mmm_config']['adstock_params'],
+                                'discount_factor_base': discount_factor_base,
+                                'initial_point_base': initial_point_base,
+                                'seasonality': seasonality
                             }
                             
-                            excel_link = download_excel(excel_data, "resultados_mmm.xlsx")
-                            st.markdown(excel_link, unsafe_allow_html=True)
-                    
-                    with col2:
-                        if st.button("💾 Guardar Modelo"):
-                            st.session_state['saved_mmm_model'] = results
-                            st.success("✅ Modelo guardado como 'modelo1.mmm'")
+                            results = simulate_mmm_model(
+                                df, 
+                                config['target_col'], 
+                                config['media_cols'], 
+                                model_config
+                            )
+                            
+                            if results is not None:
+                                st.session_state['mmm_results'] = results
+                                st.success("✅ Modelo ejecutado exitosamente!")
+                            else:
+                                st.error("❌ Error al ejecutar el modelo. Verifica los datos y configuración.")
                 else:
-                    st.error("❌ Los resultados del modelo no son válidos.")
+                    st.warning("⚠️ Configura las variables y parámetros de adstock antes de ejecutar el modelo.")
+                
+                # Mostrar resultados si existen
+                if 'mmm_results' in st.session_state:
+                    results = st.session_state['mmm_results']
+                    
+                    st.subheader("📊 Resultados del Modelo")
+                    
+                    # Verificar que hay resultados válidos
+                    if results and 'contributions' in results and 'roi' in results:
+                        # Gráfico de contribuciones apiladas
+                        st.subheader("📈 Contribuciones por Medio")
+                        fig_contrib = create_contribution_chart(results['contributions'], config['media_cols'])
+                        if fig_contrib.data:  # Solo mostrar si hay datos
+                            st.plotly_chart(fig_contrib, use_container_width=True)
+                        else:
+                            st.warning("⚠️ No se pudieron generar las contribuciones.")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Gráfico de pastel de ROI
+                            st.subheader("🥧 ROI por Medio")
+                            if results['roi']:
+                                fig_pie = create_roi_pie_chart(results['roi'])
+                                st.plotly_chart(fig_pie, use_container_width=True)
+                            else:
+                                st.warning("⚠️ No hay datos de ROI disponibles.")
+                        
+                        with col2:
+                            # Tabla de ROI
+                            st.subheader("💰 ROI Detallado")
+                            if results['roi']:
+                                roi_df = pd.DataFrame(list(results['roi'].items()), 
+                                                    columns=['Medio', 'ROI'])
+                                roi_df['ROI'] = roi_df['ROI'].round(2)
+                                st.dataframe(roi_df, use_container_width=True)
+                            else:
+                                st.warning("⚠️ No hay datos de ROI disponibles.")
+                        
+                        # Opciones de descarga
+                        st.subheader("💾 Descargar Resultados")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if results['contributions'] is not None and results['roi']:
+                                # Preparar datos para Excel
+                                excel_data = {
+                                    'Contribuciones': results['contributions'],
+                                    'ROI': pd.DataFrame(list(results['roi'].items()), 
+                                                      columns=['Medio', 'ROI'])
+                                }
+                                
+                                excel_link = download_excel(excel_data, "resultados_mmm.xlsx")
+                                st.markdown(excel_link, unsafe_allow_html=True)
+                        
+                        with col2:
+                            if st.button("💾 Guardar Modelo"):
+                                st.session_state['saved_mmm_model'] = results
+                                st.success("✅ Modelo guardado como 'modelo1.mmm'")
+                    else:
+                        st.error("❌ Los resultados del modelo no son válidos.")
+            
+            else:
+                st.info("📋 **Pasos para configurar el modelo:**\n1. Selecciona variable objetivo (target)\n2. Selecciona variables de medios\n3. Configura parámetros del modelo\n4. Ejecuta el modelo")
         
         else:
-            st.warning("⚠️ Por favor, carga y configura los datos en la pestaña 'Input y Configuración' primero.")
+            st.warning("⚠️ Por favor, carga los datos en la pestaña 'Input y Configuración' primero.")
+            st.info("📋 **Pasos necesarios:**\n1. Ve a la primera pestaña\n2. Carga archivo CSV\n3. Regresa aquí para configurar y ejecutar modelo")
 
 def segmentation_app():
     """Aplicación de Segmentación"""
